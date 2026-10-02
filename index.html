@@ -63,7 +63,22 @@ body{background:var(--bg);color:var(--text);min-height:100%;padding-top:var(--sa
 <div class="modal-overlay" id="modal"><div class="modal" id="modalBody"></div></div>
 
 <script>
-window.claude=window.claude||{use:async()=>null};
+window.claude=window.claude||{use:async n=>{
+  if(n!=='sample')return null;
+  const b64=bl=>new Promise((ok,ko)=>{const f=new FileReader();f.onload=()=>ok(f.result.split(',')[1]);f.onerror=ko;f.readAsDataURL(bl)});
+  const s=async(input,o={})=>{
+    const key=localStorage.getItem('ecolesync_key');if(!key)throw{code:'absent'};
+    let t=typeof input==='string'?[{role:'user',content:input}]:input.map(x=>({...x}));
+    const m=[];t.forEach(x=>{const l=m[m.length-1];if(l&&l.role===x.role)l.content+='\n\n'+x.content;else m.push(x)});
+    if(o.images){const bl=[].concat(o.images)[0];const last=m[m.length-1];last.content=[{type:'image',source:{type:'base64',media_type:'image/jpeg',data:await b64(bl)}},{type:'text',text:last.content}]}
+    const model=(o.modelTier==='quick'&&!o.images)?'claude-haiku-4-5-20251001':'claude-sonnet-5-5';
+    let res;try{res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model,max_tokens:1000,messages:m})})}catch(e){throw{code:'reseau'}}
+    if(!res.ok)throw{code:res.status===401?'cle_invalide':'api_'+res.status};
+    const d=await res.json(),text=(d.content||[]).map(c=>c.text||'').join('');
+    if(o.onText)o.onText({text,delta:text});return{text}};
+  s.json=async(i,o)=>{const {text}=await s(i,o);try{return JSON.parse(text.replace(/```json|```/g,'').trim())}catch(e){throw{code:'invalid_json'}}};
+  s.limits=async()=>({images:{maxCount:1}});
+  return s}};
 const KEY='ecolesync_v2';
 const SUBJ={Maths:['🔢','#DBEAFE'],'Français':['📖','#FCE7F3'],Allemand:['🇩🇪','#FEF3C7'],Sciences:['🔬','#D1FAE5'],'Découverte':['🌍','#EDE9FE'],Autre:['📌','#E2E8F0']};
 const DE=[['rouge','rot'],['bleu','blau'],['vert','grün'],['jaune','gelb'],['maison','das Haus'],['chat','die Katze'],['chien','der Hund'],['école','die Schule'],['livre','das Buch'],['eau','das Wasser'],['pain','das Brot'],['mère','die Mutter'],['père','der Vater'],['un','eins'],['deux','zwei'],['trois','drei'],['bonjour','Guten Tag'],['merci','Danke'],['s\'il te plaît','Bitte'],['au revoir','Auf Wiedersehen']];
@@ -196,6 +211,7 @@ function renderPlus(){
   <button class="btn btn-secondary" style="margin-bottom:16px" onclick="openAddChild()">+ Ajouter un enfant</button>
   <div class="section-title">Canton</div><div class="card"><select onchange="data.canton=this.value;save()" style="width:100%;padding:12px;border-radius:12px;font-size:16px">${['Vaud','Genève','Fribourg','Valais','Neuchâtel','Jura','Autre'].map(c=>`<option ${data.canton===c?'selected':''}>${c}</option>`).join('')}</select></div>
   <div class="section-title">Ressources difficultés</div><div class="card"><div style="font-size:14px;line-height:1.6"><strong>TDAH</strong> : découper les devoirs, timer, pauses fréquentes<br><strong>TSA</strong> : routines visuelles, consignes claires, moins de bruit<br><strong>Dyslexie</strong> : police adaptée, plus de temps, oral possible<br><strong>Dyscalculie</strong> : supports concrets, schémas, calculatrice si autorisée</div></div>
+  <div class="section-title">Clé IA (Anthropic)</div><div class="card"><div style="font-size:13px;color:var(--text2);margin-bottom:10px">Pour l'analyse de photo et l'aide vocale. Crée une clé sur console.anthropic.com et fixe une limite de dépense. Elle reste sur cet iPhone uniquement.</div><input id="keyIn" type="password" placeholder="sk-ant-…" value="${esc(localStorage.getItem('ecolesync_key')||'')}" style="width:100%;padding:12px;border-radius:12px;border:1px solid #94A3B844;font-size:16px;background:var(--bg);color:var(--text);margin-bottom:10px"><button class="btn" onclick="localStorage.setItem('ecolesync_key',$('keyIn').value.trim());toast('Clé enregistrée ✅')">Enregistrer la clé</button></div>
   <button class="btn btn-secondary" onclick="exportData()">💾 Sauvegarder les données</button>
   <button class="btn btn-danger" style="margin-top:14px" onclick="if(confirm('Tout effacer ?')){try{localStorage.removeItem(KEY)}catch(e){}location.reload()}">Réinitialiser</button>`}
 function exportData(){
@@ -329,7 +345,7 @@ async function vSend(){
   unlockSpeech();
   inp.value='';vBubble('user',text);vTurns.push({role:'user',content:text});
   const el=vBubble('ai','Je réfléchis…');vBusy=true;
-  const msgs={absent:'L\'IA n\'est pas branchée dans cette version hébergée (elle marche dans la version Claude).',not_granted:'Tu as refusé l\'accès à Claude. Relance et accepte la demande.',rate_limited:'Trop de demandes, attends un instant.',cancelled:''};
+  const msgs={absent:'Ajoute d\'abord ta clé IA : onglet Plus > Clé IA.',cle_invalide:'Ta clé IA est refusée. Vérifie-la dans Plus > Clé IA.',reseau:'Pas de connexion ou accès bloqué.',not_granted:'Tu as refusé l\'accès à Claude. Relance et accepte la demande.',rate_limited:'Trop de demandes, attends un instant.',cancelled:''};
   try{
     const s=await claude.use('sample');if(!s)throw {code:'absent'};
     const caps=await s.limits().catch(()=>null),c=currentChild();
